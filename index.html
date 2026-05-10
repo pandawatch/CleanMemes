@@ -119,6 +119,7 @@
       font-size:.9rem;
     }
     .btn:hover { background:#202023; }
+    .btn:disabled { opacity:.5; cursor:not-allowed; }
 
     .btn.super-on {
       background:#2f5d1f;
@@ -464,8 +465,8 @@ function resolveImage(year, month, index) {
       const tester = new Image();
       tester.referrerPolicy = "no-referrer";
       
-      // Aggressive timeout: abort after 2s
-      const timeout = setTimeout(() => reject(new Error("timeout")), 2000);
+      // Relaxed timeout: 4s instead of 2s for reliability
+      const timeout = setTimeout(() => reject(new Error("timeout")), 4000);
       
       tester.onload = () => {
         clearTimeout(timeout);
@@ -491,107 +492,126 @@ async function generateImages(target = 5) {
   clearError();
   images = [];
 
-  let misses = 0;
   let cycles = 0;
-
   const statusBox = document.getElementById("statusBox");
-  const maxCycles = 60; // Reduced from 120
+  const maxCycles = 40;
+  
+  // Fallback months that are known to have content
+  const fallbackMonths = [
+    "2023-08", "2023-07", "2023-06", "2023-05", "2023-04", "2023-03",
+    "2023-09", "2023-10", "2023-02", "2022-12", "2022-11", "2022-10"
+  ];
 
   while (images.length < target && cycles < maxCycles) {
     cycles++;
 
-    const monthsPerCycle = superMode ? 6 : 3; // Reduced
-    const indicesPerMonth = superMode ? 80 : 40; // Reduced 
+    // Adaptive: MORE months early, fewer later
+    const monthsPerCycle = cycles <= 3 ? 10 : (superMode ? 7 : 5);
+    const indicesPerMonth = superMode ? 120 : 80;
 
     const monthConfigs = [];
+    const cachedKeys = Object.keys(monthCache).filter(k => monthCache[k].length > 0);
 
-    /* ✅ Prefer cached months */
-    const cachedKeys = Object.keys(monthCache);
-    if (cachedKeys.length && Math.random() < 0.8) {
-      while (monthConfigs.length < monthsPerCycle && cachedKeys.length) {
+    // Cycle 1-2: Prioritize successful cached months
+    if (cycles <= 2 && cachedKeys.length) {
+      const take = Math.min(Math.ceil(monthsPerCycle / 2), cachedKeys.length);
+      for (let i = 0; i < take; i++) {
         const key = cachedKeys[Math.floor(Math.random() * cachedKeys.length)];
         const [y, m] = key.split("-");
         monthConfigs.push({ year: y, month: m, fromCache: true, key });
       }
     }
 
-    /* ✅ Fill remaining with random months */
+    // Early cycles: Use fallback months
+    if (monthConfigs.length < monthsPerCycle && cycles <= 4) {
+      const remaining = monthsPerCycle - monthConfigs.length;
+      const shuffled = [...fallbackMonths].sort(() => Math.random() - 0.5);
+      for (let i = 0; i < Math.min(remaining, shuffled.length); i++) {
+        const [y, m] = shuffled[i].split("-");
+        const key = shuffled[i];
+        monthConfigs.push({ year: y, month: m, fromCache: !!monthCache[key], key });
+      }
+    }
+
+    // Fill remaining with random months
     while (monthConfigs.length < monthsPerCycle) {
-      const { year, month } = randomYearMonth();
-      const key = `${year}-${month}`;
-      const fromCache = !!monthCache[key];
-      monthConfigs.push({ year, month, fromCache, key });
+      let year, month, key;
+      if (cachedKeys.length && Math.random() < 0.7) {
+        key = cachedKeys[Math.floor(Math.random() * cachedKeys.length)];
+        [year, month] = key.split("-");
+      } else {
+        ({ year, month } = randomYearMonth());
+        key = `${year}-${month}`;
+      }
+      monthConfigs.push({ year, month, fromCache: !!monthCache[key], key });
     }
 
     const allPromises = [];
-    const meta = [];
 
     for (const cfg of monthConfigs) {
       let indices;
 
-      if (cfg.fromCache && monthCache[cfg.key] && monthCache[cfg.key].length) {
+      if (cfg.fromCache && monthCache[cfg.key]?.length) {
         const known = monthCache[cfg.key].slice();
         shuffleArray(known);
         indices = known.slice(0, Math.min(indicesPerMonth, known.length));
       } else {
-        // Only test up to 2000 indices per month (vs 9999) for massive speed boost
-        const full = Array.from({ length: Math.min(2000, 9999) }, (_, i) => i + 1);
-        shuffleArray(full);
-        indices = full.slice(0, indicesPerMonth);
+        // Try low indices first (more reliable), then random
+        const lowIds = Array.from({ length: 300 }, (_, i) => i + 1);
+        const highIds = Array.from({ length: 1700 }, (_, i) => i + 300);
+        shuffleArray(highIds);
+        indices = [...lowIds, ...highIds.slice(0, 400)].slice(0, indicesPerMonth);
       }
 
       for (const idx of indices) {
-        // Early termination: stop creating promises if we have enough pending
-        if (allPromises.length < target * 6) {
+        // Aggressive parallelization
+        if (allPromises.length < target * 10) {
           allPromises.push(resolveImage(cfg.year, cfg.month, idx).catch(() => null));
-          meta.push({ key: cfg.key, index: idx });
         }
       }
     }
 
     const results = await Promise.allSettled(allPromises);
+    let cycleHits = 0;
 
-    for (let i = 0; i < results.length; i++) {
-      const r = results[i];
-
+    for (const r of results) {
       if (r.status === "fulfilled" && r.value) {
         const { url, year, month, index } = r.value;
 
-        /* ✅ Skip if already seen */
-        if (seenImages.has(url)) continue;
+        if (!seenImages.has(url)) {
+          images.push(url);
+          seenImages.add(url);
+          cycleHits++;
 
-        images.push(url);
-        seenImages.add(url);
-
-        const key = `${year}-${month}`;
-        if (!monthCache[key]) monthCache[key] = [];
-        if (!monthCache[key].includes(index)) {
-          monthCache[key].push(index);
+          const key = `${year}-${month}`;
+          if (!monthCache[key]) monthCache[key] = [];
+          if (!monthCache[key].includes(index)) {
+            monthCache[key].push(index);
+          }
         }
-      } else {
-        misses++;
       }
 
-      statusBox.textContent =
-        `Loaded ${images.length}/${target}… (misses: ${misses}, cycles: ${cycles})`;
-
+      statusBox.textContent = `Loaded ${images.length}/${target}…`;
       if (images.length >= target) break;
     }
 
-    /* ✅ Persist cache + seen images only after successful batch */
-    if (images.length >= target || cycles % 2 === 0) {
+    // Periodic persistence
+    if (cycles % 2 === 0) {
       localStorage.setItem("monthCacheV1", JSON.stringify(monthCache));
       localStorage.setItem("seenImages", JSON.stringify([...seenImages]));
     }
+
+    // Break early if found enough
+    if (images.length >= target) break;
   }
 
   localStorage.setItem("monthCacheV1", JSON.stringify(monthCache));
   localStorage.setItem("seenImages", JSON.stringify([...seenImages]));
 
   if (!images.length) {
-    showError("No images found. Try again.");
+    showError("No images found. Network issue? Try again.");
   } else if (images.length < target) {
-    showError(`Loaded ${images.length}/${target}. Some months were sparse.`);
+    showError(`Only found ${images.length}/${target} images.`);
   }
 
   renderLane();
@@ -678,17 +698,20 @@ function toggleFavorite(src) {
 
   localStorage.setItem("favoritesV2", JSON.stringify(favorites));
   
-  // Only update affected card button, not entire lane
-  const cards = lane.querySelectorAll(".card");
-  for (const card of cards) {
-    const img = card.querySelector("img");
-    if (img && img.src === src) {
-      const btn = card.querySelector(".favBtn");
-      const isFav = favoritesSet.has(src);
-      btn.textContent = isFav ? "Saved" : "⭐";
-      btn.classList.toggle("saved", isFav);
+  // Smart DOM update with requestAnimationFrame
+  requestAnimationFrame(() => {
+    const cards = lane.querySelectorAll(".card");
+    for (const card of cards) {
+      const img = card.querySelector("img");
+      if (img && img.src === src) {
+        const btn = card.querySelector(".favBtn");
+        const isFav = favoritesSet.has(src);
+        btn.textContent = isFav ? "Saved" : "⭐";
+        btn.classList.toggle("saved", isFav);
+        break; // Only one match, can break early
+      }
     }
-  }
+  });
   
   renderFavoritesList();
 }
@@ -905,9 +928,17 @@ document.getElementById("downloadZipBtn").addEventListener("click", async () => 
 /* ============================================================
    ✅ BUTTONS
    ============================================================ */
+let isGenerating = false;
 document.getElementById("generate").addEventListener("click", () => {
+  if (isGenerating) return;
+  isGenerating = true;
+  const btn = document.getElementById("generate");
+  btn.disabled = true;
   const count = parseInt(countInput.value, 10);
-  generateImages(count);
+  generateImages(count).finally(() => {
+    isGenerating = false;
+    btn.disabled = false;
+  });
 });
 document.getElementById("shuffle").addEventListener("click", shuffle);
 document.getElementById("nextRandom").addEventListener("click", jumpRandom);

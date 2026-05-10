@@ -2,15 +2,19 @@
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
-const url = require('url');
 
 const PORT = process.env.PORT || 3000;
 const HOST = process.env.HOST || 'localhost';
 
 const server = http.createServer((req, res) => {
-  // Parse URL
-  const parsedUrl = url.parse(req.url, true);
-  let pathname = parsedUrl.pathname;
+  // Parse URL using WHATWG standard
+  let pathname;
+  try {
+    const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+    pathname = url.pathname;
+  } catch {
+    pathname = req.url;
+  }
 
   // Default to index.html for root
   if (pathname === '/') {
