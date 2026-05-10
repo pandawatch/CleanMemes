@@ -1,0 +1,922 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>CleanMemes Random Scroller + Favorites Turbo</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <!-- ✅ JSZip + FileSaver CDN -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+
+  <style>
+    body, html {
+      margin:0;
+      height:100%;
+      background:#0f0f10;
+      color:#fff;
+      font-family:sans-serif;
+      overflow:hidden;
+    }
+
+    .app {
+      display:flex;
+      height:100vh;
+      width:100vw;
+    }
+
+    .spacer { flex:1; }
+
+    .centerLaneWrapper {
+      flex:0 0 50vw;
+      max-width:700px;
+      min-width:320px;
+      display:flex;
+      justify-content:center;
+      border-left:1px solid #1c1c1d;
+      border-right:1px solid #1c1c1d;
+    }
+
+    .lane {
+      width:100%;
+      height:100vh;
+      overflow-y:scroll;
+      scroll-snap-type:y mandatory;
+      background:#0f0f10;
+    }
+
+    .laneTitle {
+      position:sticky;
+      top:0;
+      background:#101011;
+      padding:10px;
+      text-align:center;
+      font-size:1.1rem;
+      border-bottom:1px solid #242428;
+      z-index:5;
+    }
+
+    .card {
+      height:100vh;
+      scroll-snap-align:start;
+      display:grid;
+      place-items:center;
+      background:#161617;
+      position:relative;
+    }
+
+    .card img {
+      max-width:100%;
+      max-height:100%;
+      object-fit:contain;
+      border-radius:12px;
+    }
+
+    .favBtn {
+      position:absolute;
+      top:15px;
+      right:15px;
+      background:#1a1a1b;
+      border:1px solid #2a2a30;
+      padding:6px 10px;
+      border-radius:10px;
+      cursor:pointer;
+      color:#fff;
+      font-size:.9rem;
+      opacity:.8;
+    }
+    .favBtn:hover { opacity:1; }
+    .favBtn.saved { background:#ffd54a; color:#000; }
+
+    .chrome {
+      position:fixed;
+      top:10px;
+      left:50%;
+      transform:translateX(-50%);
+      display:flex;
+      gap:8px;
+      background:#101011;
+      border:1px solid #242428;
+      border-radius:14px;
+      padding:8px;
+      z-index:20;
+      transition:all .25s ease;
+    }
+
+    .chrome.hidden {
+      transform:translate(-50%, -120%);
+      opacity:0;
+      pointer-events:none;
+    }
+
+    .btn {
+      background:#1a1a1b;
+      color:#fff;
+      border:1px solid #2a2a30;
+      padding:6px 10px;
+      border-radius:10px;
+      cursor:pointer;
+      font-size:.9rem;
+    }
+    .btn:hover { background:#202023; }
+
+    .btn.super-on {
+      background:#2f5d1f;
+      border-color:#4caf50;
+    }
+
+    .status {
+      position:fixed;
+      top:60px;
+      left:50%;
+      transform:translateX(-50%);
+      background:#101011;
+      color:#9aa0a6;
+      border:1px solid #242428;
+      padding:6px 10px;
+      border-radius:10px;
+      display:none;
+      z-index:20;
+    }
+    .status.show { display:block; }
+
+    .errorBox {
+      position:fixed;
+      bottom:20px;
+      left:50%;
+      transform:translateX(-50%);
+      background:#2a1014;
+      color:#ffb3bd;
+      border:1px solid #ff4d67;
+      padding:8px 12px;
+      border-radius:12px;
+      max-width:80%;
+      font-size:.9rem;
+      display:none;
+      z-index:20;
+    }
+    .errorBox.show { display:block; }
+
+    input[type=number] {
+      width:60px;
+      text-align:center;
+      background:#1a1a1b;
+      color:#fff;
+      border:1px solid #2a2a30;
+      border-radius:10px;
+      padding:4px 6px;
+      font-size:.9rem;
+    }
+
+    .showChromeBtn {
+      position:fixed;
+      top:10px;
+      left:10px;
+      background:#1a1a1b;
+      color:#fff;
+      border:1px solid #2a2a30;
+      padding:6px 10px;
+      border-radius:10px;
+      cursor:pointer;
+      opacity:0;
+      pointer-events:none;
+      transition:opacity .25s ease;
+      z-index:25;
+      font-size:.85rem;
+    }
+    .showChromeBtn.visible {
+      opacity:1;
+      pointer-events:auto;
+    }
+
+    .favoritesPanel {
+      position:relative;
+      width:260px;
+      background:#101011;
+      border-left:1px solid #1c1c1d;
+      display:flex;
+      flex-direction:column;
+      height:100vh;
+      transform:translateX(0);
+      transition:transform .25s ease;
+      z-index:10;
+    }
+
+    .favoritesPanel.collapsed {
+      transform:translateX(220px);
+    }
+
+    .favoritesHeader {
+      position:relative;
+      padding:10px;
+      border-bottom:1px solid #242428;
+      text-align:center;
+      font-size:1rem;
+    }
+
+    .favoritesToggleTab {
+      position:absolute;
+      left:-40px;
+      top:50%;
+      transform:translateY(-50%);
+      writing-mode:vertical-rl;
+      text-orientation:mixed;
+      background:#101011;
+      border:1px solid #242428;
+      border-right:none;
+      border-radius:10px 0 0 10px;
+      padding:6px 4px;
+      font-size:.8rem;
+      cursor:pointer;
+    }
+
+    .favoritesList {
+      flex:1;
+      overflow-y:auto;
+      padding:6px;
+      font-size:.85rem;
+    }
+
+    .favoriteItem {
+      display:flex;
+      align-items:center;
+      gap:6px;
+      padding:4px;
+      border-radius:8px;
+      cursor:pointer;
+      border:1px solid transparent;
+    }
+    .favoriteItem:hover {
+      background:#18181a;
+      border-color:#2a2a30;
+    }
+
+    .favoriteThumb {
+      width:40px;
+      height:40px;
+      border-radius:6px;
+      object-fit:cover;
+      background:#202023;
+    }
+
+    .favoriteLabel {
+      flex:1;
+      white-space:nowrap;
+      overflow:hidden;
+      text-overflow:ellipsis;
+    }
+
+    .popupOverlay {
+      position:fixed;
+      inset:0;
+      background:rgba(0,0,0,.7);
+      display:none;
+      align-items:center;
+      justify-content:center;
+      z-index:30;
+    }
+    .popupOverlay.show {
+      display:flex;
+    }
+
+    .popupContent {
+      background:#101011;
+      border:1px solid #242428;
+      border-radius:12px;
+      max-width:90vw;
+      max-height:90vh;
+      padding:10px;
+      display:flex;
+      flex-direction:column;
+      gap:6px;
+    }
+
+    .popupImgWrapper {
+      flex:1;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+    }
+
+    .popupImgWrapper img {
+      max-width:80vw;
+      max-height:70vh;
+      object-fit:contain;
+      border-radius:10px;
+    }
+
+    .popupHeader {
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      font-size:.9rem;
+    }
+
+    .popupCloseBtn {
+      background:#1a1a1b;
+      border:1px solid #2a2a30;
+      border-radius:8px;
+      color:#fff;
+      padding:4px 8px;
+      cursor:pointer;
+    }
+    .popupCloseBtn:hover {
+      background:#202023;
+    }
+
+    @media (max-width:900px) {
+      .spacer { display:none; }
+      .centerLaneWrapper { flex:1; max-width:none; }
+      .favoritesPanel {
+        width:220px;
+      }
+      .favoritesPanel.collapsed {
+        transform:translateX(200px);
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ✅ Chrome bar -->
+  <div class="chrome">
+    <input type="number" id="imageCount" min="1" max="50" value="5" />
+    <button class="btn" id="generate">Generate</button>
+    <button class="btn" id="shuffle">Shuffle</button>
+    <button class="btn" id="nextRandom">Next Random</button>
+    <button class="btn" id="toggleChrome">Hide</button>
+    <button class="btn" id="superModeBtn">Super Mode: Off</button>
+
+    <!-- ✅ ZIP download button -->
+    <button class="btn" id="downloadZipBtn">Download Favorites (ZIP)</button>
+  </div>
+
+  <button id="showChromeBtn" class="showChromeBtn">Show controls (H)</button>
+
+  <div class="status" id="statusBox">Generating…</div>
+  <div class="errorBox" id="errorBox"></div>
+
+  <!-- ✅ Popup -->
+  <div class="popupOverlay" id="popupOverlay">
+    <div class="popupContent">
+      <div class="popupHeader">
+        <div id="popupLabel">Favorite</div>
+        <button class="popupCloseBtn" id="popupClose">Close</button>
+      </div>
+      <div class="popupImgWrapper">
+        <img id="popupImg" alt="Favorite meme" />
+      </div>
+    </div>
+  </div>
+
+  <div class="app">
+    <div class="spacer"></div>
+
+    <!-- ✅ Center lane -->
+    <div class="centerLaneWrapper">
+      <div class="lane" id="lane">
+        <div class="laneTitle">Random Memes</div>
+      </div>
+    </div>
+
+    <!-- ✅ Favorites panel -->
+    <div class="favoritesPanel" id="favoritesPanel">
+      <div class="favoritesHeader">
+        ⭐ Favorites
+        <button class="favoritesToggleTab" id="favoritesToggleTab">
+          Favorites »
+        </button>
+      </div>
+      <div class="favoritesList" id="favoritesList"></div>
+    </div>
+  </div>
+
+<script>
+/* ============================================================
+   ✅ GLOBAL STATE
+   ============================================================ */
+const lane = document.getElementById("lane");
+const favoritesPanel = document.getElementById("favoritesPanel");
+const favoritesListEl = document.getElementById("favoritesList");
+
+let images = [];
+let superMode = false;
+
+const EXTENSIONS = [".jpg", ".jpeg", ".png", ".webp"];
+
+/* ✅ Favorites stored as objects: { src, label, ts } */
+let favorites = JSON.parse(localStorage.getItem("favoritesV2") || "[]");
+let favoriteCounter = parseInt(localStorage.getItem("favoriteCounter") || "0", 10) || 0;
+
+/* ✅ Fast lookup: Set of favorite URLs */
+let favoritesSet = new Set(favorites.map(f => f.src));
+
+/* ✅ Month cache: "YYYY-MM" -> [indices] */
+let monthCache = JSON.parse(localStorage.getItem("monthCacheV1") || "{}");
+
+/* ✅ Seen images: prevent repeats */
+let seenImages = new Set(JSON.parse(localStorage.getItem("seenImages") || "[]"));
+
+/* ============================================================
+   ✅ RESTORE COUNT
+   ============================================================ */
+const countInput = document.getElementById("imageCount");
+const savedCount = localStorage.getItem("imageCount");
+if (savedCount) countInput.value = savedCount;
+
+countInput.addEventListener("change", () => {
+  localStorage.setItem("imageCount", countInput.value);
+});
+
+/* ============================================================
+   ✅ RANDOM MONTH PICKER
+   ============================================================ */
+function randomYearMonth() {
+  const startYear = 2021, startMonth = 10;
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  const currentMonth = now.getMonth() + 1;
+
+  let year = Math.floor(Math.random() * (currentYear - startYear + 1)) + startYear;
+  let month;
+
+  if (year === startYear) {
+    month = Math.floor(Math.random() * (12 - startMonth + 1)) + startMonth;
+  } else if (year === currentYear) {
+    month = Math.floor(Math.random() * currentMonth) + 1;
+  } else {
+    month = Math.floor(Math.random() * 12) + 1;
+  }
+
+  return { year, month: String(month).padStart(2,"0") };
+}
+
+/* ============================================================
+   ✅ IMAGE RESOLVER (PARALLEL EXTENSIONS + FETCH ABORT)
+   ============================================================ */
+function resolveImage(year, month, index) {
+  const num = String(index).padStart(4,"0");
+  
+  // Parallel test all extensions at once using Promise.any
+  const promises = EXTENSIONS.map(ext => {
+    return new Promise((resolve, reject) => {
+      const url = `https://cleanmemes.com/wp-content/uploads/${year}/${month}/img_${num}${ext}`;
+      const tester = new Image();
+      tester.referrerPolicy = "no-referrer";
+      
+      // Aggressive timeout: abort after 2s
+      const timeout = setTimeout(() => reject(new Error("timeout")), 2000);
+      
+      tester.onload = () => {
+        clearTimeout(timeout);
+        resolve({ url, year, month, index });
+      };
+      tester.onerror = () => {
+        clearTimeout(timeout);
+        reject(new Error("load error"));
+      };
+      
+      tester.src = url + "?cb=" + Math.random();
+    });
+  });
+  
+  return Promise.any(promises);
+}
+
+/* ============================================================
+   ✅ GENERATOR (PARALLEL MONTHS + SMART SAMPLING + NO REPEATS)
+   ============================================================ */
+async function generateImages(target = 5) {
+  setStatus(true);
+  clearError();
+  images = [];
+
+  let misses = 0;
+  let cycles = 0;
+
+  const statusBox = document.getElementById("statusBox");
+  const maxCycles = 60; // Reduced from 120
+
+  while (images.length < target && cycles < maxCycles) {
+    cycles++;
+
+    const monthsPerCycle = superMode ? 6 : 3; // Reduced
+    const indicesPerMonth = superMode ? 80 : 40; // Reduced 
+
+    const monthConfigs = [];
+
+    /* ✅ Prefer cached months */
+    const cachedKeys = Object.keys(monthCache);
+    if (cachedKeys.length && Math.random() < 0.8) {
+      while (monthConfigs.length < monthsPerCycle && cachedKeys.length) {
+        const key = cachedKeys[Math.floor(Math.random() * cachedKeys.length)];
+        const [y, m] = key.split("-");
+        monthConfigs.push({ year: y, month: m, fromCache: true, key });
+      }
+    }
+
+    /* ✅ Fill remaining with random months */
+    while (monthConfigs.length < monthsPerCycle) {
+      const { year, month } = randomYearMonth();
+      const key = `${year}-${month}`;
+      const fromCache = !!monthCache[key];
+      monthConfigs.push({ year, month, fromCache, key });
+    }
+
+    const allPromises = [];
+    const meta = [];
+
+    for (const cfg of monthConfigs) {
+      let indices;
+
+      if (cfg.fromCache && monthCache[cfg.key] && monthCache[cfg.key].length) {
+        const known = monthCache[cfg.key].slice();
+        shuffleArray(known);
+        indices = known.slice(0, Math.min(indicesPerMonth, known.length));
+      } else {
+        // Only test up to 2000 indices per month (vs 9999) for massive speed boost
+        const full = Array.from({ length: Math.min(2000, 9999) }, (_, i) => i + 1);
+        shuffleArray(full);
+        indices = full.slice(0, indicesPerMonth);
+      }
+
+      for (const idx of indices) {
+        // Early termination: stop creating promises if we have enough pending
+        if (allPromises.length < target * 6) {
+          allPromises.push(resolveImage(cfg.year, cfg.month, idx).catch(() => null));
+          meta.push({ key: cfg.key, index: idx });
+        }
+      }
+    }
+
+    const results = await Promise.allSettled(allPromises);
+
+    for (let i = 0; i < results.length; i++) {
+      const r = results[i];
+
+      if (r.status === "fulfilled" && r.value) {
+        const { url, year, month, index } = r.value;
+
+        /* ✅ Skip if already seen */
+        if (seenImages.has(url)) continue;
+
+        images.push(url);
+        seenImages.add(url);
+
+        const key = `${year}-${month}`;
+        if (!monthCache[key]) monthCache[key] = [];
+        if (!monthCache[key].includes(index)) {
+          monthCache[key].push(index);
+        }
+      } else {
+        misses++;
+      }
+
+      statusBox.textContent =
+        `Loaded ${images.length}/${target}… (misses: ${misses}, cycles: ${cycles})`;
+
+      if (images.length >= target) break;
+    }
+
+    /* ✅ Persist cache + seen images only after successful batch */
+    if (images.length >= target || cycles % 2 === 0) {
+      localStorage.setItem("monthCacheV1", JSON.stringify(monthCache));
+      localStorage.setItem("seenImages", JSON.stringify([...seenImages]));
+    }
+  }
+
+  localStorage.setItem("monthCacheV1", JSON.stringify(monthCache));
+  localStorage.setItem("seenImages", JSON.stringify([...seenImages]));
+
+  if (!images.length) {
+    showError("No images found. Try again.");
+  } else if (images.length < target) {
+    showError(`Loaded ${images.length}/${target}. Some months were sparse.`);
+  }
+
+  renderLane();
+  renderFavoritesList();
+  jumpRandom();
+  setStatus(false);
+}
+
+/* ============================================================
+   UTILS
+   ============================================================ */
+function shuffleArray(arr) {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+}
+
+/* ============================================================
+   ✅ RENDER LANE (OPTIMIZED WITH DOCUMENTFRAGMENT)
+   ============================================================ */
+function renderLane() {
+  const title = lane.querySelector(".laneTitle");
+  
+  // Remove all cards but keep title
+  const cards = lane.querySelectorAll(".card");
+  cards.forEach(card => card.remove());
+  
+  // Use DocumentFragment for batch DOM insertion
+  const frag = document.createDocumentFragment();
+  images.forEach(src => {
+    frag.appendChild(createCard(src));
+  });
+  
+  lane.appendChild(frag);
+}
+
+/* ============================================================
+   ✅ CREATE CARD
+   ============================================================ */
+function createCard(src) {
+  const card = document.createElement("div");
+  card.className = "card";
+
+  const img = document.createElement("img");
+  img.src = src;
+  img.alt = "Meme";
+  img.loading = "lazy";
+  img.referrerPolicy = "no-referrer";
+
+  const favBtn = document.createElement("button");
+  favBtn.className = "favBtn";
+
+  const isFav = favoritesSet.has(src);
+  favBtn.textContent = isFav ? "Saved" : "⭐";
+  if (isFav) favBtn.classList.add("saved");
+
+  favBtn.onclick = () => toggleFavorite(src);
+
+  card.appendChild(img);
+  card.appendChild(favBtn);
+  return card;
+}
+
+/* ============================================================
+   ✅ FAVORITES SYSTEM
+   ============================================================ */
+function toggleFavorite(src) {
+  const existingIndex = favorites.findIndex(f => f.src === src);
+
+  if (existingIndex !== -1) {
+    favorites.splice(existingIndex, 1);
+    favoritesSet.delete(src);
+  } else {
+    favoriteCounter++;
+    favorites.push({
+      src,
+      label: `Favorite img ${favoriteCounter}`,
+      ts: Date.now()
+    });
+    favoritesSet.add(src);
+    localStorage.setItem("favoriteCounter", String(favoriteCounter));
+  }
+
+  localStorage.setItem("favoritesV2", JSON.stringify(favorites));
+  
+  // Only update affected card button, not entire lane
+  const cards = lane.querySelectorAll(".card");
+  for (const card of cards) {
+    const img = card.querySelector("img");
+    if (img && img.src === src) {
+      const btn = card.querySelector(".favBtn");
+      const isFav = favoritesSet.has(src);
+      btn.textContent = isFav ? "Saved" : "⭐";
+      btn.classList.toggle("saved", isFav);
+    }
+  }
+  
+  renderFavoritesList();
+}
+
+let renderFavListTimeout;
+function renderFavoritesList() {
+  // Debounce rapid updates
+  clearTimeout(renderFavListTimeout);
+  renderFavListTimeout = setTimeout(() => _renderFavoritesListNow(), 50);
+}
+
+function _renderFavoritesListNow() {
+  favoritesListEl.innerHTML = "";
+
+  if (!favorites.length) {
+    const empty = document.createElement("div");
+    empty.style.opacity = ".6";
+    empty.style.padding = "6px";
+    empty.textContent = "No favorites yet. Tap ⭐ on a meme.";
+    favoritesListEl.appendChild(empty);
+    return;
+  }
+
+  const sorted = [...favorites].sort((a, b) => b.ts - a.ts);
+  const frag = document.createDocumentFragment();
+
+  for (const fav of sorted) {
+    const item = document.createElement("div");
+    item.className = "favoriteItem";
+
+    const thumb = document.createElement("img");
+    thumb.className = "favoriteThumb";
+    thumb.src = fav.src;
+    thumb.alt = fav.label;
+    thumb.referrerPolicy = "no-referrer";
+    thumb.loading = "lazy";
+
+    const label = document.createElement("div");
+    label.className = "favoriteLabel";
+    label.textContent = fav.label;
+
+    item.appendChild(thumb);
+    item.appendChild(label);
+
+    item.onclick = () => openPopup(fav);
+
+    frag.appendChild(item);
+  }
+  
+  favoritesListEl.appendChild(frag);
+}
+
+/* ============================================================
+   ✅ SHUFFLE
+   ============================================================ */
+function shuffle() {
+  for (let i = images.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [images[i], images[j]] = [images[j], images[i]];
+  }
+  renderLane();
+}
+
+/* ============================================================
+   ✅ RANDOM JUMP
+   ============================================================ */
+function jumpRandom() {
+  const cards = [...lane.querySelectorAll(".card")];
+  if (!cards.length) return;
+  const card = cards[Math.floor(Math.random() * cards.length)];
+  card.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+/* ============================================================
+   ✅ STATUS + ERROR
+   ============================================================ */
+function setStatus(on) {
+  document.getElementById("statusBox").classList.toggle("show", on);
+}
+
+function showError(msg) {
+  const box = document.getElementById("errorBox");
+  clearError();
+  box.textContent = msg;
+  box.classList.add("show");
+}
+
+function clearError() {
+  document.getElementById("errorBox").classList.remove("show");
+}
+
+/* ============================================================
+   ✅ CHROME BAR TOGGLE
+   ============================================================ */
+const chromeBar = document.querySelector(".chrome");
+const toggleBtn = document.getElementById("toggleChrome");
+const showChromeBtn = document.getElementById("showChromeBtn");
+
+function toggleChrome() {
+  chromeBar.classList.toggle("hidden");
+  const hidden = chromeBar.classList.contains("hidden");
+  toggleBtn.textContent = hidden ? "Show" : "Hide";
+  showChromeBtn.classList.toggle("visible", hidden);
+}
+
+toggleBtn.addEventListener("click", toggleChrome);
+showChromeBtn.addEventListener("click", toggleChrome);
+
+/* ============================================================
+   ✅ SUPER MODE TOGGLE
+   ============================================================ */
+const superModeBtn = document.getElementById("superModeBtn");
+superModeBtn.addEventListener("click", () => {
+  superMode = !superMode;
+  superModeBtn.textContent = superMode ? "Super Mode: On" : "Super Mode: Off";
+  superModeBtn.classList.toggle("super-on", superMode);
+});
+
+/* ============================================================
+   ✅ FAVORITES PANEL TOGGLE
+   ============================================================ */
+const favoritesToggleTab = document.getElementById("favoritesToggleTab");
+favoritesToggleTab.addEventListener("click", () => {
+  const collapsed = favoritesPanel.classList.toggle("collapsed");
+  favoritesToggleTab.textContent = collapsed ? "« Favorites" : "Favorites »";
+});
+
+/* ============================================================
+   ✅ POPUP VIEWER
+   ============================================================ */
+const popupOverlay = document.getElementById("popupOverlay");
+const popupImg = document.getElementById("popupImg");
+const popupLabelEl = document.getElementById("popupLabel");
+const popupCloseBtn = document.getElementById("popupClose");
+
+function openPopup(fav) {
+  popupImg.src = fav.src;
+  popupImg.referrerPolicy = "no-referrer";
+  popupLabelEl.textContent = fav.label;
+  popupOverlay.classList.add("show");
+}
+
+function closePopup() {
+  popupOverlay.classList.remove("show");
+}
+
+popupCloseBtn.addEventListener("click", closePopup);
+popupOverlay.addEventListener("click", (e) => {
+  if (e.target === popupOverlay) closePopup();
+});
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") closePopup();
+});
+
+/* ============================================================
+   ✅ KEYBOARD SHORTCUTS
+   ============================================================ */
+document.addEventListener("keydown", (e) => {
+  if (e.key.toLowerCase() === "h") toggleChrome();
+});
+
+/* ============================================================
+   ✅ ZIP DOWNLOAD BUTTON (FIXED - NO CORS ISSUES)
+   ============================================================ */
+document.getElementById("downloadZipBtn").addEventListener("click", async () => {
+  if (!favorites.length) return;
+
+  const btn = document.getElementById("downloadZipBtn");
+  const originalText = btn.textContent;
+  btn.textContent = "Downloading...";
+  btn.disabled = true;
+
+  const zip = new JSZip();
+  const folder = zip.folder("favorites");
+  let successCount = 0;
+
+  const promises = favorites.map(async (fav, index) => {
+    try {
+      // Try direct fetch first (works same-origin)
+      const response = await fetch(fav.src, { 
+        method: 'GET',
+        mode: 'no-cors',
+        referrerPolicy: 'no-referrer'
+      });
+      
+      if (response.ok || response.type === 'opaque') {
+        const blob = await response.blob();
+        if (blob.size > 0) {
+          const ext = fav.src.split('.').pop().split(/\?|#/)[0] || 'jpg';
+          const filename = `img_${String(index + 1).padStart(3, '0')}.${ext}`;
+          folder.file(filename, blob, { binary: true });
+          successCount++;
+        }
+      }
+    } catch (err) {
+      // Silently skip failed images
+      console.debug("Skipped image:", fav.src);
+    }
+  });
+
+  await Promise.all(promises);
+  
+  if (successCount === 0) {
+    showError("Could not download images. Try again.");
+  } else {
+    const content = await zip.generateAsync({ type: "blob" });
+    saveAs(content, `favorites-${Date.now()}.zip`);
+  }
+  
+  btn.textContent = originalText;
+  btn.disabled = false;
+});
+
+/* ============================================================
+   ✅ BUTTONS
+   ============================================================ */
+document.getElementById("generate").addEventListener("click", () => {
+  const count = parseInt(countInput.value, 10);
+  generateImages(count);
+});
+document.getElementById("shuffle").addEventListener("click", shuffle);
+document.getElementById("nextRandom").addEventListener("click", jumpRandom);
+
+/* ============================================================
+    INITIAL RENDER + AUTO-GENERATE
+   ============================================================ */
+renderFavoritesList();
+generateImages(parseInt(countInput.value, 10));
+</script>
+</body>
+</html>

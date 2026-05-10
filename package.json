@@ -1,0 +1,15 @@
+{
+  "name": "cleanmemes",
+  "version": "1.0.0",
+  "description": "Random Memes Scroller with Favorites",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js",
+    "server": "node server.js",
+    "py": "python3 server.py"
+  },
+  "keywords": ["memes", "favorites", "web"],
+  "author": "",
+  "license": "MIT"
+}
