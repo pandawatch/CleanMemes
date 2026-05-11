@@ -43,8 +43,11 @@ PORT=8080 python3 server.py
 ## ⚡ Performance Optimizations
 
 ### Latest Updates:
+- **Non-blocking Page Load** - Initial generation delayed until page fully loads
+- **Deferred CDN Scripts** - JSZip/FileSaver load asynchronously without blocking
+- **Loading Placeholder** - Shows "Loading memes..." while generation starts
 - **Parallel Extension Testing** - Tests `.jpg`, `.jpeg`, `.png`, `.webp` simultaneously (~3-4x faster)
-- **Aggressive Timeouts** - 2-second image fetch timeout prevents hanging
+- **Aggressive Timeouts** - 4-second image fetch timeout prevents hanging
 - **DocumentFragment Rendering** - Batch DOM updates for 2-3x faster rendering
 - **Debounced Updates** - Favorites list updates batched to prevent UI thrashing
 - **O(1) Favorite Lookups** - Set-based storage for instant favorite checking
@@ -52,7 +55,7 @@ PORT=8080 python3 server.py
 - **Minimal DOM Updates** - Favorite toggle updates only affected card, not entire lane
 - **Pre-cached Months** - Aggressive caching of valid month/index combos
 
-**Result**: Image generation is **2-3x faster** than v1
+**Result**: Page loads instantly, generation is **2-3x faster** than v1
 
 ## 🐛 Bug Fixes
 

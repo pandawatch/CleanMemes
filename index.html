@@ -6,8 +6,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <!-- ✅ JSZip + FileSaver CDN -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js" defer></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js" defer></script>
 
   <style>
     body, html {
@@ -377,6 +377,10 @@
     <div class="centerLaneWrapper">
       <div class="lane" id="lane">
         <div class="laneTitle">Random Memes</div>
+        <!-- Initial loading placeholder -->
+        <div class="card" style="display:flex; align-items:center; justify-content:center; color:#666;">
+          <div>Loading memes...</div>
+        </div>
       </div>
     </div>
 
@@ -947,7 +951,11 @@ document.getElementById("nextRandom").addEventListener("click", jumpRandom);
     INITIAL RENDER + AUTO-GENERATE
    ============================================================ */
 renderFavoritesList();
-generateImages(parseInt(countInput.value, 10));
+
+// Delay initial generation to allow page to fully load first
+setTimeout(() => {
+  generateImages(parseInt(countInput.value, 10));
+}, 100);
 </script>
 </body>
 </html>
